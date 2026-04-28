@@ -1,0 +1,25 @@
+Composite the product image onto the dog photo as a pet shopping preview.
+
+Preserve the product image exactly:
+- do not change the product's original angle
+- do not change the product's original size
+- do not change the product's aspect ratio
+- do not change the product's shape
+- do not change the product's color
+- do not change the product's texture
+- do not change any logo, label, text, or pattern on the product
+- do not redraw, redesign, rotate, resize, warp, or distort the product
+
+Keep the dog photo unchanged:
+- do not change the dog's face
+- do not change the dog's body shape
+- do not change the dog's fur color
+- do not change the background except for local blending around the product
+
+Only adjust:
+- product alpha blending
+- contact shadow
+- soft edge blending
+- local placement preview
+
+The result should look like a realistic product preview image for a pet shopping app.
