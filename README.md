@@ -1,156 +1,34 @@
-# Dog Clothes and Harness Preview Backend
+# Dog Harness Stable Diffusion Preview Backend
 
-This project is moving from local image compositing to local image generation/editing for dog clothes and dog harness previews. The primary goal is no longer to paste a transparent product image onto a dog photo, but to use a local GPU workflow that behaves more like: "Generate an image of this dog wearing this harness or clothing."
+FastAPI backend for generating a dog harness preview from:
 
-The backend remains FastAPI, free, local, and API-only. It does not use paid APIs, OpenAI image generation, Flutter code, or database code.
+- one dog image
+- one harness image
+- the prompt: `a dog is wearing the harness`
 
-## Current Direction
+The backend now preserves the dog better by using the dog photo as the inpainting base image. It only masks the neck/chest/torso region, so the face, breed, pose, legs, and background are much less likely to change. The harness image is passed as an IP-Adapter product reference so the generated harness should follow the uploaded harness color and shape more closely than plain prompt-only generation.
 
-The new primary endpoint is:
+The old ComfyUI workflow, overlay compositing, fit-harness warping, rembg, OpenCV, dog keypoints, and `/preview/composite` endpoint were removed.
+
+## Endpoint
 
 ```text
 POST /preview/generate
 ```
 
-It accepts a dog photo, a product image, and `product_type` of `harness` or `clothes`, then sends them to a pluggable local image generation backend.
+Multipart fields:
 
-ComfyUI is the first practical backend target because the intended Windows PC has:
-
-- Intel i7-14700K
-- 64GB RAM
-- NVIDIA RTX 4080 SUPER with 16GB VRAM
-
-That GPU is suitable for SDXL image-to-image or inpainting workflows at around 1024px using CUDA/fp16, depending on model and workflow choices.
-
-## Deprecated Legacy Endpoint
-
-```text
-POST /preview/composite
-```
-
-This route is still present for legacy/internal behavior and is marked deprecated in FastAPI. It supports the older overlay and experimental `fit_harness` compositing pipeline.
-
-Important limitation: overlay and `fit_harness` are not true virtual try-on. They can still look like a product image pasted over the dog photo. The generation endpoint should be used for realistic dog clothes and harness previews.
-
-## Backend Architecture
-
-```text
-app/
-  config.py
-  main.py
-  api/
-    generate.py
-    preview.py
-  services/
-    generation_prompt_service.py
-    image_generation_service.py
-    model_backend_service.py
-    comfyui_client_service.py
-    mask_service.py
-    background_remove_service.py
-    composite_service.py
-  prompts/
-    dog_outfit_generation_prompt.txt
-    dog_outfit_negative_prompt.txt
-    pet_product_preview.txt
-static/
-  uploads/
-  results/
-  debug/
-```
-
-The generation backend is pluggable through `model_backend_service.py`. Currently:
-
-- `ComfyUIGenerationBackend` sends work to a separate local ComfyUI server.
-- `LocalStubGenerationBackend` intentionally does not composite and returns a clear unavailable error.
-
-No large models are downloaded by FastAPI at startup.
-
-## Configuration
-
-Defaults:
-
-```text
-COMFYUI_BASE_URL=http://127.0.0.1:8188
-IMAGE_BACKEND=comfyui
-```
-
-Optional workflow template:
-
-```text
-COMFYUI_WORKFLOW_PATH=E:\AI\ComfyUI\workflows\dog_outfit_api_workflow.json
-```
-
-The ComfyUI client uploads the dog image, product image, and optional rough mask through the ComfyUI API, then submits the configured API workflow JSON. Workflow templates may use these placeholders:
-
-```text
-{{DOG_IMAGE}}
-{{PRODUCT_IMAGE}}
-{{MASK_IMAGE}}
-{{PRODUCT_TYPE}}
-{{GENERATION_PROMPT}}
-{{NEGATIVE_PROMPT}}
-```
-
-## Recommended Local Generation Stack
-
-- ComfyUI
-- SDXL Inpainting or SDXL image-to-image
-- IP-Adapter for product image reference
-- ControlNet Canny or Depth for preserving dog pose/structure
-- Optional segmentation/body mask later
-- Target resolution: 1024px for SDXL
-- fp16 / CUDA on the RTX 4080 SUPER 16GB VRAM
-
-Suggested Windows folders if C drive storage is tight:
-
-```text
-E:\AI\ComfyUI
-E:\AI\Models
-E:\AI\outputs
-```
-
-Start ComfyUI:
-
-```bash
-python main.py --listen 127.0.0.1 --port 8188
-```
-
-Start FastAPI:
-
-```bash
-uvicorn app.main:app --reload
-```
-
-## Install FastAPI Dependencies
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-The FastAPI side stays lightweight and does not include `torch` or `diffusers`. ComfyUI should be installed and managed separately.
-
-## Generate Endpoint
-
-`POST /preview/generate`
-
-Multipart form fields:
-
-- `dog_image`: uploaded dog photo.
-- `product_image`: uploaded product image.
-- `product_type`: required string, `harness` or `clothes`.
-- `prompt_mode`: optional string, default `wearing_preview`.
-- `use_comfyui`: optional boolean, default `true`.
+- `dog_image`: dog photo file
+- `product_image`: harness image file
+- `prompt`: optional, defaults to `a dog is wearing the harness`
 
 Example:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/preview/generate \
-  -F "dog_image=@/path/to/dog.jpg" \
-  -F "product_image=@/path/to/harness.png" \
-  -F "product_type=harness"
+  -F "dog_image=@images/dog1.png" \
+  -F "product_image=@images/harness1.png" \
+  -F "prompt=a dog is wearing the harness"
 ```
 
 Success response:
@@ -158,96 +36,104 @@ Success response:
 ```json
 {
   "status": "success",
-  "result_image_path": "/static/results/generated_pet_preview_abc123.png",
-  "product_type": "harness",
-  "generation_prompt": "Use the dog photo as the identity and pose reference...",
-  "negative_prompt": "pasted sticker, flat overlay, floating product...",
-  "backend": "comfyui",
-  "message": "Generated a local image-editing preview with the configured backend."
+  "result_image_path": "/static/results/dog_wearing_harness_xxx.png",
+  "base_image_path": "/static/results/inpaint_base_xxx.png",
+  "mask_image_path": "/static/results/inpaint_mask_xxx.png",
+  "prompt": "same dog as the input photo...",
+  "negative_prompt": "different dog, different breed...",
+  "backend": "diffusers-stable-diffusion-inpaint-ip-adapter",
+  "message": "Generated by inpainting the dog torso while preserving the dog image outside the mask and using the harness as an IP-Adapter reference."
 }
 ```
 
-Invalid product type:
+## How It Works
 
-```json
-{
-  "status": "failed",
-  "stage": "validation",
-  "message": "product_type must be harness or clothes."
-}
-```
+1. The dog image is resized to the configured generation size.
+2. A dog foreground mask is estimated with OpenCV GrabCut.
+3. The foreground bbox is used to build a torso/chest/shoulder inpaint mask while protecting the head and lower legs.
+4. `StableDiffusionInpaintPipeline` edits only the masked region.
+5. The harness image is supplied through IP-Adapter as the product reference.
+6. The generated image, base image, and mask are saved under `static/results`.
 
-If ComfyUI or a generation backend is unavailable:
-
-```json
-{
-  "status": "failed",
-  "stage": "model_backend",
-  "message": "No local image generation backend is configured or ComfyUI is not running. Start ComfyUI and configure COMFYUI_BASE_URL."
-}
-```
-
-The unavailable backend response uses HTTP `501`. The endpoint does not fall back to overlay, because compositing is not image generation.
-
-## Troubleshooting: HTTP 501 Model Backend
-
-If `/preview/generate` returns:
-
-```json
-{
-  "status": "failed",
-  "stage": "model_backend",
-  "message": "No local image generation backend is configured or ComfyUI is not running. Start ComfyUI and configure COMFYUI_BASE_URL."
-}
-```
-
-ComfyUI is not running, cannot be reached, or no ComfyUI API workflow JSON is configured.
-
-Start ComfyUI:
-
-```powershell
-cd E:\AI\ComfyUI
-python main.py --listen 127.0.0.1 --port 8188
-```
-
-Open ComfyUI in a browser:
+Default model:
 
 ```text
-http://127.0.0.1:8188
+runwayml/stable-diffusion-inpainting
 ```
 
-Set environment variables before starting FastAPI:
+Default IP-Adapter:
+
+```text
+h94/IP-Adapter
+models/ip-adapter_sd15.bin
+```
+
+## Settings
+
+You can override settings with environment variables:
 
 ```powershell
-$env:COMFYUI_BASE_URL="http://127.0.0.1:8188"
-$env:IMAGE_BACKEND="comfyui"
-$env:COMFYUI_WORKFLOW_PATH="E:\AI\ComfyUI\workflows\dog_outfit_api_workflow.json"
+$env:SD_MODEL_ID="runwayml/stable-diffusion-inpainting"
+$env:SD_IMAGE_SIZE="768"
+$env:SD_STRENGTH="0.72"
+$env:SD_GUIDANCE_SCALE="7.0"
+$env:SD_STEPS="35"
+$env:SD_IP_ADAPTER_SCALE="0.75"
+```
+
+If the harness is not changing enough, increase:
+
+```powershell
+$env:SD_STRENGTH="0.82"
+```
+
+If the dog body changes too much, decrease:
+
+```powershell
+$env:SD_STRENGTH="0.55"
+```
+
+If the harness identity is weak, increase:
+
+```powershell
+$env:SD_IP_ADAPTER_SCALE="0.9"
+```
+
+## Install
+
+CUDA PyTorch is recommended for the RTX 4080 SUPER.
+
+```bash
+pip install -r requirements.txt
+```
+
+If PyTorch installs as CPU-only, install CUDA PyTorch manually:
+
+```bash
+pip install --upgrade --force-reinstall --no-deps torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+```
+
+This project expects a Diffusers-compatible Transformers version:
+
+```bash
+pip install "transformers>=4.41,<5"
+```
+
+## Run
+
+```bash
 uvicorn app.main:app --reload
 ```
 
-`COMFYUI_WORKFLOW_PATH` must point to a ComfyUI API workflow JSON exported from your local ComfyUI setup. The FastAPI backend is ready, but the actual generation result depends on connecting a working ComfyUI workflow and local model files.
-
-## Generation Prompt
-
-The fixed prompt is stored at:
+Open:
 
 ```text
-app/prompts/dog_outfit_generation_prompt.txt
+http://127.0.0.1:8000/docs
 ```
 
-The fixed negative prompt is stored at:
+## Notes
 
-```text
-app/prompts/dog_outfit_negative_prompt.txt
-```
-
-They instruct the model to preserve the dog identity, pose, fur color, product design, color, material, pattern, shadows, folds, occlusion, and contact with fur while making the product look worn rather than pasted on.
-
-## Limitations
-
-- Result quality depends on the ComfyUI workflow and model selection.
-- Product identity may not be perfectly preserved.
-- Dog pose and product angle affect quality.
-- This is not a trained pet-specific virtual try-on model yet.
-- The rough torso mask is only a placeholder for future inpainting workflows.
-- A proper workflow still needs suitable SDXL/IP-Adapter/ControlNet nodes and local model files in ComfyUI.
+- First run may download the inpainting model and IP-Adapter weights into `.local/huggingface`.
+- The face and background are preserved because they are outside the mask.
+- The torso mask is still heuristic, but it is now based on the detected dog foreground instead of fixed hardcoded image coordinates.
+- This is better than plain img2img, but still not a trained pet-specific virtual try-on model.

@@ -2,10 +2,11 @@ fastapi
 uvicorn[standard]
 python-multipart
 Pillow
-rembg
-onnxruntime
-opencv-python
-numpy
-requests
 pydantic
+opencv-python
+torch
+diffusers>=0.31,<0.38
+transformers>=4.41,<5
+accelerate
+safetensors
 

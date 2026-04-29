@@ -1,4 +1,4 @@
-"""Runtime configuration for the local pet preview backend."""
+"""Runtime configuration for the local Stable Diffusion preview backend."""
 
 from __future__ import annotations
 
@@ -13,24 +13,41 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 UPLOAD_DIR = STATIC_DIR / "uploads"
 RESULT_DIR = STATIC_DIR / "results"
-DEBUG_DIR = STATIC_DIR / "debug"
+LOCAL_DIR = BASE_DIR / ".local"
+MODEL_CACHE_DIR = LOCAL_DIR / "huggingface"
 
 
 class AppConfig(BaseModel):
-    """Environment-backed settings without contacting model backends at import time."""
+    """Environment-backed Stable Diffusion settings."""
 
-    comfyui_base_url: str = Field(
-        default_factory=lambda: os.getenv("COMFYUI_BASE_URL", "http://127.0.0.1:8188").rstrip("/")
+    sd_model_id: str = Field(default_factory=lambda: os.getenv("SD_MODEL_ID", "runwayml/stable-diffusion-inpainting"))
+    sd_prompt: str = Field(
+        default_factory=lambda: os.getenv(
+            "SD_PROMPT",
+            "a dog is wearing the same olive green and black harness from the product reference image",
+        )
     )
-    image_backend: str = Field(default_factory=lambda: os.getenv("IMAGE_BACKEND", "comfyui").lower())
-    comfyui_workflow_path: str | None = Field(default_factory=lambda: os.getenv("COMFYUI_WORKFLOW_PATH"))
-    comfyui_timeout_seconds: float = Field(default_factory=lambda: float(os.getenv("COMFYUI_TIMEOUT_SECONDS", "10")))
-    comfyui_poll_interval_seconds: float = Field(
-        default_factory=lambda: float(os.getenv("COMFYUI_POLL_INTERVAL_SECONDS", "1.5"))
+    sd_negative_prompt: str = Field(
+        default_factory=lambda: os.getenv(
+            "SD_NEGATIVE_PROMPT",
+            "different dog, different breed, changed face, distorted dog face, changed fur color, changed dog identity, "
+            "pasted sticker, flat overlay, floating harness, different harness, black-only harness, collar only, leash, "
+            "product beside dog, extra dog, duplicate dog, bad anatomy, missing legs, extra legs, blurry, low quality",
+        )
     )
-    comfyui_prompt_timeout_seconds: float = Field(
-        default_factory=lambda: float(os.getenv("COMFYUI_PROMPT_TIMEOUT_SECONDS", "600"))
+    sd_image_size: int = Field(default_factory=lambda: int(os.getenv("SD_IMAGE_SIZE", "768")))
+    sd_strength: float = Field(default_factory=lambda: float(os.getenv("SD_STRENGTH", "0.72")))
+    sd_guidance_scale: float = Field(default_factory=lambda: float(os.getenv("SD_GUIDANCE_SCALE", "7.0")))
+    sd_steps: int = Field(default_factory=lambda: int(os.getenv("SD_STEPS", "35")))
+    sd_seed: int | None = Field(default_factory=lambda: int(os.getenv("SD_SEED")) if os.getenv("SD_SEED") else None)
+    sd_cache_dir: str = Field(default_factory=lambda: os.getenv("SD_CACHE_DIR", str(MODEL_CACHE_DIR)))
+    sd_use_ip_adapter: bool = Field(
+        default_factory=lambda: os.getenv("SD_USE_IP_ADAPTER", "true").strip().lower() in {"1", "true", "yes", "on"}
     )
+    sd_ip_adapter_repo: str = Field(default_factory=lambda: os.getenv("SD_IP_ADAPTER_REPO", "h94/IP-Adapter"))
+    sd_ip_adapter_subfolder: str = Field(default_factory=lambda: os.getenv("SD_IP_ADAPTER_SUBFOLDER", "models"))
+    sd_ip_adapter_weight: str = Field(default_factory=lambda: os.getenv("SD_IP_ADAPTER_WEIGHT", "ip-adapter_sd15.bin"))
+    sd_ip_adapter_scale: float = Field(default_factory=lambda: float(os.getenv("SD_IP_ADAPTER_SCALE", "0.75")))
 
 
 @lru_cache
