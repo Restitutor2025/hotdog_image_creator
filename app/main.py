@@ -19,9 +19,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 UPLOAD_DIR = STATIC_DIR / "uploads"
 RESULT_DIR = STATIC_DIR / "results"
+DEBUG_DIR = STATIC_DIR / "debug"
 
 # Create local folders at startup import time so the MVP works from a fresh clone.
-for directory in (STATIC_DIR, UPLOAD_DIR, RESULT_DIR):
+for directory in (STATIC_DIR, UPLOAD_DIR, RESULT_DIR, DEBUG_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 

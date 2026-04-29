@@ -4,4 +4,6 @@ python-multipart
 Pillow
 rembg
 onnxruntime
+opencv-python
+numpy
 

@@ -8,6 +8,7 @@ ENV/
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+.cache/
 
 # Env files
 .env
@@ -25,3 +26,4 @@ __pycache__/
 # Upload/result temp files
 static/uploads/
 static/results/
+static/debug/
