@@ -189,6 +189,44 @@ If ComfyUI or a generation backend is unavailable:
 
 The unavailable backend response uses HTTP `501`. The endpoint does not fall back to overlay, because compositing is not image generation.
 
+## Troubleshooting: HTTP 501 Model Backend
+
+If `/preview/generate` returns:
+
+```json
+{
+  "status": "failed",
+  "stage": "model_backend",
+  "message": "No local image generation backend is configured or ComfyUI is not running. Start ComfyUI and configure COMFYUI_BASE_URL."
+}
+```
+
+ComfyUI is not running, cannot be reached, or no ComfyUI API workflow JSON is configured.
+
+Start ComfyUI:
+
+```powershell
+cd E:\AI\ComfyUI
+python main.py --listen 127.0.0.1 --port 8188
+```
+
+Open ComfyUI in a browser:
+
+```text
+http://127.0.0.1:8188
+```
+
+Set environment variables before starting FastAPI:
+
+```powershell
+$env:COMFYUI_BASE_URL="http://127.0.0.1:8188"
+$env:IMAGE_BACKEND="comfyui"
+$env:COMFYUI_WORKFLOW_PATH="E:\AI\ComfyUI\workflows\dog_outfit_api_workflow.json"
+uvicorn app.main:app --reload
+```
+
+`COMFYUI_WORKFLOW_PATH` must point to a ComfyUI API workflow JSON exported from your local ComfyUI setup. The FastAPI backend is ready, but the actual generation result depends on connecting a working ComfyUI workflow and local model files.
+
 ## Generation Prompt
 
 The fixed prompt is stored at:
