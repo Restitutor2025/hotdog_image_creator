@@ -1,222 +1,215 @@
-# Pet Product Preview Backend
+# Dog Clothes and Harness Preview Backend
 
-Free local FastAPI MVP for composing a user-uploaded pet product image onto a user-uploaded dog photo. The backend keeps the original simple overlay mode and adds an experimental dog harness fitting pipeline that runs locally with open-source Python packages.
+This project is moving from local image compositing to local image generation/editing for dog clothes and dog harness previews. The primary goal is no longer to paste a transparent product image onto a dog photo, but to use a local GPU workflow that behaves more like: "Generate an image of this dog wearing this harness or clothing."
 
-No paid APIs, database, Flutter code, or OpenAI image generation are used.
+The backend remains FastAPI, free, local, and API-only. It does not use paid APIs, OpenAI image generation, Flutter code, or database code.
 
-## What This Does
+## Current Direction
 
-- Upload a dog photo and product image.
-- Remove the product image background locally with `rembg`.
-- Save uploaded files under `static/uploads`.
-- Save generated preview images under `static/results`.
-- Optionally save fitting debug images under `static/debug`.
-- Return the result image path, image size, mode, fixed prompt text, and fitting metadata when available.
+The new primary endpoint is:
 
-## Modes
+```text
+POST /preview/generate
+```
 
-`overlay` mode is the original sticker-like composition. The transparent product is optionally scaled, placed at `x`/`y`, opacity-adjusted, shadowed, and alpha-composited directly over the dog photo. It does not segment the dog, estimate keypoints, warp the product, or restore dog pixels over the product.
+It accepts a dog photo, a product image, and `product_type` of `harness` or `clothes`, then sends them to a pluggable local image generation backend.
 
-`fit_harness` mode is experimental. It segments the dog, estimates coarse body landmarks from the mask, perspective-warps the transparent product toward the torso, creates a soft occlusion mask around neck/chest/shoulder areas, applies lightweight edge refinement, and composites the result. The product texture, color, logo, and visual identity are preserved as much as possible, but the harness may be warped because fitting requires shape adaptation.
+ComfyUI is the first practical backend target because the intended Windows PC has:
 
-## Backend Folder Structure
+- Intel i7-14700K
+- 64GB RAM
+- NVIDIA RTX 4080 SUPER with 16GB VRAM
+
+That GPU is suitable for SDXL image-to-image or inpainting workflows at around 1024px using CUDA/fp16, depending on model and workflow choices.
+
+## Deprecated Legacy Endpoint
+
+```text
+POST /preview/composite
+```
+
+This route is still present for legacy/internal behavior and is marked deprecated in FastAPI. It supports the older overlay and experimental `fit_harness` compositing pipeline.
+
+Important limitation: overlay and `fit_harness` are not true virtual try-on. They can still look like a product image pasted over the dog photo. The generation endpoint should be used for realistic dog clothes and harness previews.
+
+## Backend Architecture
 
 ```text
 app/
+  config.py
   main.py
   api/
+    generate.py
     preview.py
   services/
+    generation_prompt_service.py
+    image_generation_service.py
+    model_backend_service.py
+    comfyui_client_service.py
+    mask_service.py
     background_remove_service.py
     composite_service.py
-    dog_segmentation_service.py
-    dog_keypoint_service.py
-    product_warp_service.py
-    occlusion_service.py
-    inpainting_refine_service.py
-    prompt_service.py
   prompts/
+    dog_outfit_generation_prompt.txt
+    dog_outfit_negative_prompt.txt
     pet_product_preview.txt
 static/
   uploads/
   results/
   debug/
-requirements.txt
 ```
 
-## Requirements
+The generation backend is pluggable through `model_backend_service.py`. Currently:
 
-- Python 3.10 or newer is recommended.
-- Do not commit a virtual environment folder.
-- Internet access may be needed the first time `rembg` downloads its local model file.
-- After models are cached locally, the API runs without paid external services.
+- `ComfyUIGenerationBackend` sends work to a separate local ComfyUI server.
+- `LocalStubGenerationBackend` intentionally does not composite and returns a clear unavailable error.
 
-Install packages:
+No large models are downloaded by FastAPI at startup.
+
+## Configuration
+
+Defaults:
+
+```text
+COMFYUI_BASE_URL=http://127.0.0.1:8188
+IMAGE_BACKEND=comfyui
+```
+
+Optional workflow template:
+
+```text
+COMFYUI_WORKFLOW_PATH=E:\AI\ComfyUI\workflows\dog_outfit_api_workflow.json
+```
+
+The ComfyUI client uploads the dog image, product image, and optional rough mask through the ComfyUI API, then submits the configured API workflow JSON. Workflow templates may use these placeholders:
+
+```text
+{{DOG_IMAGE}}
+{{PRODUCT_IMAGE}}
+{{MASK_IMAGE}}
+{{PRODUCT_TYPE}}
+{{GENERATION_PROMPT}}
+{{NEGATIVE_PROMPT}}
+```
+
+## Recommended Local Generation Stack
+
+- ComfyUI
+- SDXL Inpainting or SDXL image-to-image
+- IP-Adapter for product image reference
+- ControlNet Canny or Depth for preserving dog pose/structure
+- Optional segmentation/body mask later
+- Target resolution: 1024px for SDXL
+- fp16 / CUDA on the RTX 4080 SUPER 16GB VRAM
+
+Suggested Windows folders if C drive storage is tight:
+
+```text
+E:\AI\ComfyUI
+E:\AI\Models
+E:\AI\outputs
+```
+
+Start ComfyUI:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+python main.py --listen 127.0.0.1 --port 8188
 ```
 
-On Windows:
-
-```bash
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Start the API:
+Start FastAPI:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-The API will run at `http://127.0.0.1:8000`, with Swagger UI at `http://127.0.0.1:8000/docs`.
-
-## Health Check
+## Install FastAPI Dependencies
 
 ```bash
-curl http://127.0.0.1:8000/
-```
-
-Expected response:
-
-```json
-{
-  "status": "ok",
-  "service": "pet-product-preview"
-}
-```
-
-## Endpoint
-
-`POST /preview/composite`
-
-Multipart form fields:
-
-- `dog_image`: uploaded dog photo file. Supported common formats include PNG, JPG, JPEG, and WEBP.
-- `product_image`: uploaded product image file. Supported common formats include PNG, JPG, JPEG, and WEBP.
-- `placement`: optional JSON string.
-
-Placement schema:
-
-```json
-{
-  "x": 330,
-  "y": 520,
-  "scale": 0.42,
-  "opacity": 0.95,
-  "mode": "overlay",
-  "auto_fit": true,
-  "warp_strength": 0.75,
-  "occlusion_strength": 0.45,
-  "debug": false
-}
-```
-
-Placement rules:
-
-- `mode`: optional. Use `"overlay"` or `"fit_harness"`. Missing mode defaults to `"overlay"`.
-- `x`: optional product left position in pixels for overlay/manual placement.
-- `y`: optional product top position in pixels for overlay/manual placement.
-- `scale`: optional product scale multiplier. Overlay mode scales only when this value is explicitly provided.
-- `opacity`: optional product opacity from `0` to `1`.
-- `auto_fit`: optional boolean for `fit_harness`; defaults to true.
-- `warp_strength`: optional fitting warp amount from `0` to `1`; defaults to `0.75`.
-- `occlusion_strength`: optional dog-over-harness restoration amount from `0` to `1`; defaults to `0.45`.
-- `debug`: optional boolean. When true in `fit_harness`, debug image paths are returned.
-
-## Overlay Example
-
-```bash
-curl -X POST http://127.0.0.1:8000/preview/composite \
-  -F "dog_image=@/absolute/path/to/dog.jpg" \
-  -F "product_image=@/absolute/path/to/harness.png" \
-  -F 'placement={"x":330,"y":520,"scale":0.42,"opacity":0.95,"mode":"overlay"}'
-```
-
-## Fit Harness Example
-
-```bash
-curl -X POST http://127.0.0.1:8000/preview/composite \
-  -F "dog_image=@/absolute/path/to/dog.jpg" \
-  -F "product_image=@/absolute/path/to/harness.png" \
-  -F 'placement={"mode":"fit_harness","auto_fit":true,"warp_strength":0.75,"occlusion_strength":0.45,"debug":true}'
-```
-
-Without placement data, the endpoint uses overlay mode and centers the product:
-
-```bash
-curl -X POST http://127.0.0.1:8000/preview/composite \
-  -F "dog_image=@/absolute/path/to/dog.jpg" \
-  -F "product_image=@/absolute/path/to/product.png"
-```
-
-## Example Response
-
-```json
-{
-  "result_image_path": "/static/results/pet_product_preview_abc123.png",
-  "width": 1024,
-  "height": 768,
-  "mode": "fit_harness",
-  "keypoints": {
-    "body_center": [520, 430],
-    "neck_center": [500, 250],
-    "chest_center": [515, 380],
-    "shoulder_left": [390, 330],
-    "shoulder_right": [640, 330],
-    "back_center": [510, 290],
-    "torso_left": [405, 470],
-    "torso_right": [650, 470]
-  },
-  "debug_paths": {
-    "dog_mask_image": "/static/debug/run/dog_mask.png",
-    "keypoints_visualization": "/static/debug/run/keypoints.png",
-    "warped_product_image": "/static/debug/run/warped_product.png",
-    "occlusion_mask": "/static/debug/run/occlusion_mask.png",
-    "final_result": "/static/debug/run/final_result.png"
-  },
-  "fixed_prompt": "Composite the product image onto the dog photo as a pet shopping preview.\n\n..."
-}
-```
-
-Open returned paths in a browser, for example:
-
-```text
-http://127.0.0.1:8000/static/results/pet_product_preview_abc123.png
-```
-
-## Fallback Behavior
-
-If `fit_harness` cannot estimate a useful dog segmentation and `auto_fit` is true, the API falls back to `overlay` mode and returns a normal overlay response. If `auto_fit` is false, the API returns a useful `422` error so the caller can ask for a clearer dog image or switch to overlay mode.
-
-## Limitations
-
-- This is not true virtual try-on.
-- Dog pose and product angle heavily affect quality.
-- Harness fitting is experimental and uses heuristic landmarks, not trained animal pose estimation.
-- Product may still look unrealistic without a trained pet virtual try-on model.
-- The dog face is not intentionally altered, and the background is not intentionally changed except near the fitted harness blend area.
-- No heavy SDXL or diffusion inpainting model is downloaded automatically.
-
-## Troubleshooting
-
-If multipart upload fails, make sure dependencies are installed:
-
-```bash
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-If `rembg` or `numba` has cache issues, this project creates a local cache folder at:
+The FastAPI side stays lightweight and does not include `torch` or `diffusers`. ComfyUI should be installed and managed separately.
 
-```text
-.cache/numba
-```
+## Generate Endpoint
 
-If port `8000` is already in use, run on another port:
+`POST /preview/generate`
+
+Multipart form fields:
+
+- `dog_image`: uploaded dog photo.
+- `product_image`: uploaded product image.
+- `product_type`: required string, `harness` or `clothes`.
+- `prompt_mode`: optional string, default `wearing_preview`.
+- `use_comfyui`: optional boolean, default `true`.
+
+Example:
 
 ```bash
-uvicorn app.main:app --reload --port 8001
+curl -X POST http://127.0.0.1:8000/preview/generate \
+  -F "dog_image=@/path/to/dog.jpg" \
+  -F "product_image=@/path/to/harness.png" \
+  -F "product_type=harness"
 ```
+
+Success response:
+
+```json
+{
+  "status": "success",
+  "result_image_path": "/static/results/generated_pet_preview_abc123.png",
+  "product_type": "harness",
+  "generation_prompt": "Use the dog photo as the identity and pose reference...",
+  "negative_prompt": "pasted sticker, flat overlay, floating product...",
+  "backend": "comfyui",
+  "message": "Generated a local image-editing preview with the configured backend."
+}
+```
+
+Invalid product type:
+
+```json
+{
+  "status": "failed",
+  "stage": "validation",
+  "message": "product_type must be harness or clothes."
+}
+```
+
+If ComfyUI or a generation backend is unavailable:
+
+```json
+{
+  "status": "failed",
+  "stage": "model_backend",
+  "message": "No local image generation backend is configured or ComfyUI is not running. Start ComfyUI and configure COMFYUI_BASE_URL."
+}
+```
+
+The unavailable backend response uses HTTP `501`. The endpoint does not fall back to overlay, because compositing is not image generation.
+
+## Generation Prompt
+
+The fixed prompt is stored at:
+
+```text
+app/prompts/dog_outfit_generation_prompt.txt
+```
+
+The fixed negative prompt is stored at:
+
+```text
+app/prompts/dog_outfit_negative_prompt.txt
+```
+
+They instruct the model to preserve the dog identity, pose, fur color, product design, color, material, pattern, shadows, folds, occlusion, and contact with fur while making the product look worn rather than pasted on.
+
+## Limitations
+
+- Result quality depends on the ComfyUI workflow and model selection.
+- Product identity may not be perfectly preserved.
+- Dog pose and product angle affect quality.
+- This is not a trained pet-specific virtual try-on model yet.
+- The rough torso mask is only a placeholder for future inpainting workflows.
+- A proper workflow still needs suitable SDXL/IP-Adapter/ControlNet nodes and local model files in ComfyUI.

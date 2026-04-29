@@ -1,0 +1,11 @@
+Use the dog photo as the identity and pose reference.
+Use the product image as the clothing or harness design reference.
+Generate a realistic image of the same dog wearing the product.
+The dog should look natural and physically plausible.
+Preserve the dog's face, breed, fur color, body shape, and pose as much as possible.
+Preserve the product's main design, color, material, pattern, and visible details as much as possible.
+The product should appear worn on the dog's body, not pasted on top.
+The clothing or harness should wrap naturally around the dog's neck, chest, shoulders, and torso.
+Add realistic shadows, folds, occlusion, and contact with fur.
+Keep the background similar to the original dog photo unless local edits are necessary.
+Make the result look like a pet shopping app preview image.

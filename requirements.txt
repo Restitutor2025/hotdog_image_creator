@@ -6,4 +6,6 @@ rembg
 onnxruntime
 opencv-python
 numpy
+requests
+pydantic
 

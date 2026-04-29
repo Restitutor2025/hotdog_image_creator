@@ -1,25 +1,12 @@
-"""FastAPI application entry point for the pet product preview MVP.
-
-Process overview:
-1. Create the upload and result folders used by the local static file server.
-2. Build the FastAPI app object.
-3. Mount the static directory so saved images can be viewed by path.
-4. Register the preview router that owns the image-composition endpoint.
-"""
-
-from pathlib import Path
+"""FastAPI application entry point for local pet product previews."""
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.api.generate import router as generate_router
 from app.api.preview import router as preview_router
+from app.config import DEBUG_DIR, RESULT_DIR, STATIC_DIR, UPLOAD_DIR
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR / "static"
-UPLOAD_DIR = STATIC_DIR / "uploads"
-RESULT_DIR = STATIC_DIR / "results"
-DEBUG_DIR = STATIC_DIR / "debug"
 
 # Create local folders at startup import time so the MVP works from a fresh clone.
 for directory in (STATIC_DIR, UPLOAD_DIR, RESULT_DIR, DEBUG_DIR):
@@ -28,14 +15,15 @@ for directory in (STATIC_DIR, UPLOAD_DIR, RESULT_DIR, DEBUG_DIR):
 
 app = FastAPI(
     title="Pet Product Preview API",
-    description="Local FastAPI MVP for composing pet product previews without paid APIs.",
-    version="0.1.0",
+    description="Local FastAPI backend for dog clothes and harness previews without paid APIs.",
+    version="0.2.0",
 )
 
 # Serve uploaded and generated images from /static/uploads and /static/results.
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-# Attach the preview routes under /preview.
+# Attach the primary generation route and the legacy compositing route under /preview.
+app.include_router(generate_router)
 app.include_router(preview_router)
 
 

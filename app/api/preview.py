@@ -238,7 +238,7 @@ def _fit_harness_response(
     }
 
 
-@router.post("/composite")
+@router.post("/composite", deprecated=True)
 async def create_pet_product_preview(
     dog_image: UploadFile = File(...),
     product_image: UploadFile = File(...),
