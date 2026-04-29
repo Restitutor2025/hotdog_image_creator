@@ -85,6 +85,8 @@ async def generate_pet_product_preview(
         "result_image_path": _public_static_path(result.result_image_path),
         "base_image_path": _public_static_path(result.base_image_path),
         "mask_image_path": _public_static_path(result.mask_image_path),
+        "mask_overlay_path": _public_static_path(result.mask_overlay_path),
+        "product_reference_path": _public_static_path(result.product_reference_path),
         "prompt": result.prompt,
         "negative_prompt": result.negative_prompt,
         "backend": "diffusers-stable-diffusion-inpaint-ip-adapter",

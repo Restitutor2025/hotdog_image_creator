@@ -24,19 +24,21 @@ class AppConfig(BaseModel):
     sd_prompt: str = Field(
         default_factory=lambda: os.getenv(
             "SD_PROMPT",
-            "a dog is wearing the same olive green and black harness from the product reference image",
+            "a dog is wearing the harness from the uploaded product reference image",
         )
     )
     sd_negative_prompt: str = Field(
         default_factory=lambda: os.getenv(
             "SD_NEGATIVE_PROMPT",
             "different dog, different breed, changed face, distorted dog face, changed fur color, changed dog identity, "
-            "pasted sticker, flat overlay, floating harness, different harness, black-only harness, collar only, leash, "
-            "product beside dog, extra dog, duplicate dog, bad anatomy, missing legs, extra legs, blurry, low quality",
+            "changed dog body, changed fur pattern, white vest, shirt, bib, apron, cape, sticker, pasted sticker, "
+            "flat overlay, floating object, floating harness, different harness, wrong harness color, collar only, leash, "
+            "logo, text, brand mark, product beside dog, extra dog, duplicate dog, bad anatomy, missing legs, extra legs, "
+            "blurry, low quality",
         )
     )
     sd_image_size: int = Field(default_factory=lambda: int(os.getenv("SD_IMAGE_SIZE", "768")))
-    sd_strength: float = Field(default_factory=lambda: float(os.getenv("SD_STRENGTH", "0.72")))
+    sd_strength: float = Field(default_factory=lambda: float(os.getenv("SD_STRENGTH", "0.60")))
     sd_guidance_scale: float = Field(default_factory=lambda: float(os.getenv("SD_GUIDANCE_SCALE", "7.0")))
     sd_steps: int = Field(default_factory=lambda: int(os.getenv("SD_STEPS", "35")))
     sd_seed: int | None = Field(default_factory=lambda: int(os.getenv("SD_SEED")) if os.getenv("SD_SEED") else None)
@@ -47,7 +49,7 @@ class AppConfig(BaseModel):
     sd_ip_adapter_repo: str = Field(default_factory=lambda: os.getenv("SD_IP_ADAPTER_REPO", "h94/IP-Adapter"))
     sd_ip_adapter_subfolder: str = Field(default_factory=lambda: os.getenv("SD_IP_ADAPTER_SUBFOLDER", "models"))
     sd_ip_adapter_weight: str = Field(default_factory=lambda: os.getenv("SD_IP_ADAPTER_WEIGHT", "ip-adapter_sd15.bin"))
-    sd_ip_adapter_scale: float = Field(default_factory=lambda: float(os.getenv("SD_IP_ADAPTER_SCALE", "0.75")))
+    sd_ip_adapter_scale: float = Field(default_factory=lambda: float(os.getenv("SD_IP_ADAPTER_SCALE", "0.90")))
 
 
 @lru_cache

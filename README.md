@@ -39,6 +39,8 @@ Success response:
   "result_image_path": "/static/results/dog_wearing_harness_xxx.png",
   "base_image_path": "/static/results/inpaint_base_xxx.png",
   "mask_image_path": "/static/results/inpaint_mask_xxx.png",
+  "mask_overlay_path": "/static/results/inpaint_mask_overlay_xxx.png",
+  "product_reference_path": "/static/results/product_reference_xxx.png",
   "prompt": "same dog as the input photo...",
   "negative_prompt": "different dog, different breed...",
   "backend": "diffusers-stable-diffusion-inpaint-ip-adapter",
@@ -50,10 +52,10 @@ Success response:
 
 1. The dog image is resized to the configured generation size.
 2. A dog foreground mask is estimated with OpenCV GrabCut.
-3. The foreground bbox is used to build a torso/chest/shoulder inpaint mask while protecting the head and lower legs.
+3. The foreground bbox is used to build a narrow harness mask around the neck ring, shoulder strap, upper chest strap, and side strap areas while protecting the head, legs, paws, tail, and most fur.
 4. `StableDiffusionInpaintPipeline` edits only the masked region.
-5. The harness image is supplied through IP-Adapter as the product reference.
-6. The generated image, base image, and mask are saved under `static/results`.
+5. The harness image is cropped to its non-white object bbox, padded, centered on a clean canvas, and supplied through IP-Adapter as the product reference.
+6. The generated image, base image, mask, mask overlay, and product reference are saved under `static/results`.
 
 Default model:
 
@@ -75,10 +77,10 @@ You can override settings with environment variables:
 ```powershell
 $env:SD_MODEL_ID="runwayml/stable-diffusion-inpainting"
 $env:SD_IMAGE_SIZE="768"
-$env:SD_STRENGTH="0.72"
+$env:SD_STRENGTH="0.60"
 $env:SD_GUIDANCE_SCALE="7.0"
 $env:SD_STEPS="35"
-$env:SD_IP_ADAPTER_SCALE="0.75"
+$env:SD_IP_ADAPTER_SCALE="0.90"
 ```
 
 If the harness is not changing enough, increase:
@@ -135,5 +137,6 @@ http://127.0.0.1:8000/docs
 
 - First run may download the inpainting model and IP-Adapter weights into `.local/huggingface`.
 - The face and background are preserved because they are outside the mask.
-- The torso mask is still heuristic, but it is now based on the detected dog foreground instead of fixed hardcoded image coordinates.
+- The harness mask is still heuristic, but it is now based on the detected dog foreground instead of fixed hardcoded image coordinates.
+- Inspect `mask_overlay_path` when the harness appears in the wrong place.
 - This is better than plain img2img, but still not a trained pet-specific virtual try-on model.

@@ -21,6 +21,8 @@ class StableDiffusionResult:
     result_image_path: Path
     base_image_path: Path
     mask_image_path: Path
+    mask_overlay_path: Path
+    product_reference_path: Path
     prompt: str
     negative_prompt: str
 
@@ -83,8 +85,18 @@ def _bbox_from_mask(mask_array) -> tuple[int, int, int, int] | None:
     return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
 
 
+def _center_of_mask_band(mask_array, y_top: int, y_bottom: int) -> tuple[int, int] | None:
+    import numpy as np
+
+    band = mask_array[max(0, y_top) : min(mask_array.shape[0], y_bottom), :]
+    ys, xs = np.where(band > 0)
+    if len(xs) == 0:
+        return None
+    return int(xs.mean()), int(ys.mean() + max(0, y_top))
+
+
 def _make_inpaint_mask(base_image: Image.Image) -> Image.Image:
-    """Create a dog-aware torso mask from foreground segmentation and bbox proportions."""
+    """Create narrow harness strap regions from dog foreground geometry."""
 
     import cv2
     import numpy as np
@@ -94,44 +106,139 @@ def _make_inpaint_mask(base_image: Image.Image) -> Image.Image:
     if bbox is None:
         width, height = base_image.size
         fallback = np.zeros((height, width), dtype=np.uint8)
-        fallback[round(height * 0.28) : round(height * 0.74), round(width * 0.14) : round(width * 0.82)] = 255
+        cv2.line(
+            fallback,
+            (round(width * 0.42), round(height * 0.28)),
+            (round(width * 0.42), round(height * 0.58)),
+            255,
+            max(18, round(height * 0.035)),
+        )
+        cv2.line(
+            fallback,
+            (round(width * 0.22), round(height * 0.42)),
+            (round(width * 0.68), round(height * 0.42)),
+            255,
+            max(18, round(height * 0.035)),
+        )
         return Image.fromarray(fallback, mode="L").filter(ImageFilter.GaussianBlur(radius=12))
 
     x1, y1, x2, y2 = bbox
     dog_width = max(1, x2 - x1)
     dog_height = max(1, y2 - y1)
 
-    torso = np.zeros_like(dog_mask)
-    torso_top = y1 + round(dog_height * 0.26)
-    torso_bottom = y1 + round(dog_height * 0.72)
-    torso_left = x1 + round(dog_width * 0.08)
-    torso_right = x1 + round(dog_width * 0.88)
-    torso[torso_top:torso_bottom, torso_left:torso_right] = 255
+    body_center = _center_of_mask_band(
+        dog_mask,
+        y1 + round(dog_height * 0.36),
+        y1 + round(dog_height * 0.66),
+    )
+    head_center = _center_of_mask_band(
+        dog_mask,
+        y1 + round(dog_height * 0.08),
+        y1 + round(dog_height * 0.34),
+    )
+    body_x = body_center[0] if body_center else x1 + dog_width // 2
+    head_x = head_center[0] if head_center else body_x
+    front_sign = 1 if head_x >= body_x else -1
 
-    # Add extra shoulder/chest coverage on the dog's front side, which is where harness straps sit.
-    front_left = x1 + round(dog_width * 0.42)
-    front_right = x1 + round(dog_width * 0.94)
-    chest_top = y1 + round(dog_height * 0.24)
-    chest_bottom = y1 + round(dog_height * 0.62)
-    torso[chest_top:chest_bottom, front_left:front_right] = 255
+    front_x = x1 + round(dog_width * (0.70 if front_sign > 0 else 0.30))
+    rear_x = x1 + round(dog_width * (0.30 if front_sign > 0 else 0.70))
+    mid_x = x1 + round(dog_width * 0.50)
+    neck_y = y1 + round(dog_height * 0.29)
+    shoulder_y = y1 + round(dog_height * 0.38)
+    chest_y = y1 + round(dog_height * 0.50)
+    side_y = y1 + round(dog_height * 0.56)
+    strap_thickness = max(14, round(dog_height * 0.035))
 
-    # Keep face/top head and lower legs protected.
+    harness_mask = np.zeros_like(dog_mask)
+
+    # Neck ring, upper shoulder strap, upper chest strap, and side/body strap only.
+    cv2.ellipse(
+        harness_mask,
+        (front_x, neck_y),
+        (max(18, round(dog_width * 0.11)), max(10, round(dog_height * 0.035))),
+        0,
+        0,
+        360,
+        210,
+        thickness=max(10, round(strap_thickness * 0.75)),
+    )
+    cv2.line(harness_mask, (front_x, shoulder_y), (rear_x, shoulder_y + round(dog_height * 0.04)), 255, strap_thickness)
+    cv2.line(harness_mask, (front_x, shoulder_y), (front_x, chest_y + round(dog_height * 0.08)), 255, strap_thickness)
+    cv2.line(harness_mask, (front_x, chest_y), (mid_x - front_sign * round(dog_width * 0.10), side_y), 255, strap_thickness)
+    cv2.line(
+        harness_mask,
+        (mid_x - front_sign * round(dog_width * 0.08), side_y),
+        (rear_x, y1 + round(dog_height * 0.54)),
+        255,
+        max(10, round(strap_thickness * 0.8)),
+    )
+
+    # Keep face, ears, eyes, mouth, lower legs, paws, tail, and most fur protected.
     protected = np.zeros_like(dog_mask)
-    protected[y1 : y1 + round(dog_height * 0.24), :] = 255
-    protected[y1 + round(dog_height * 0.74) : y2, :] = 255
+    protected[y1 : y1 + round(dog_height * 0.25), :] = 255
+    protected[y1 + round(dog_height * 0.66) : y2, :] = 255
+    protected[:, x1 : x1 + round(dog_width * 0.08)] = 255
+    protected[:, x1 + round(dog_width * 0.92) : x2] = 255
 
-    torso = cv2.bitwise_and(torso, dog_mask)
-    torso = cv2.bitwise_and(torso, cv2.bitwise_not(protected))
+    dog_area = cv2.dilate(dog_mask, np.ones((9, 9), dtype=np.uint8), iterations=1)
+    harness_mask = cv2.bitwise_and(harness_mask, dog_area)
+    harness_mask = cv2.bitwise_and(harness_mask, cv2.bitwise_not(protected))
 
-    kernel = np.ones((17, 17), dtype=np.uint8)
-    torso = cv2.dilate(torso, kernel, iterations=1)
-    torso = cv2.bitwise_and(torso, cv2.dilate(dog_mask, np.ones((11, 11), dtype=np.uint8), iterations=1))
-    return Image.fromarray(torso, mode="L").filter(ImageFilter.GaussianBlur(radius=max(8, round(min(base_image.size) * 0.018))))
+    kernel = np.ones((7, 7), dtype=np.uint8)
+    harness_mask = cv2.dilate(harness_mask, kernel, iterations=1)
+    return Image.fromarray(harness_mask, mode="L").filter(
+        ImageFilter.GaussianBlur(radius=max(4, round(min(base_image.size) * 0.008)))
+    )
+
+
+def _make_mask_overlay(base_image: Image.Image, mask_image: Image.Image) -> Image.Image:
+    base = base_image.convert("RGBA")
+    overlay = Image.new("RGBA", base.size, (255, 0, 0, 0))
+    alpha = mask_image.convert("L").point(lambda value: round(value * 0.55))
+    overlay.putalpha(alpha)
+    return Image.alpha_composite(base, overlay)
+
+
+def _crop_product_to_object(product_image: Image.Image, padding_ratio: float = 0.08) -> Image.Image:
+    import numpy as np
+
+    rgba = product_image.convert("RGBA")
+    array = np.array(rgba)
+    rgb = array[:, :, :3].astype(np.int16)
+    alpha = array[:, :, 3]
+
+    not_transparent = alpha > 12
+    distance_from_white = np.abs(255 - rgb).max(axis=2)
+    not_white_background = distance_from_white > 18
+    object_mask = not_transparent & not_white_background
+
+    ys, xs = np.where(object_mask)
+    if len(xs) == 0 or len(ys) == 0:
+        return rgba
+
+    x1, y1, x2, y2 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+    pad_x = round((x2 - x1) * padding_ratio)
+    pad_y = round((y2 - y1) * padding_ratio)
+    x1 = max(0, x1 - pad_x)
+    y1 = max(0, y1 - pad_y)
+    x2 = min(rgba.width, x2 + pad_x)
+    y2 = min(rgba.height, y2 + pad_y)
+    return rgba.crop((x1, y1, x2, y2))
 
 
 def _load_product_reference(harness_image_path: Path, image_size: int) -> Image.Image:
     with Image.open(harness_image_path) as harness_source:
-        return _fit_image(harness_source, (image_size, image_size), background=(255, 255, 255))
+        cropped = _crop_product_to_object(harness_source)
+        reference_size = round(image_size * 0.86)
+        fitted = ImageOps.contain(cropped, (reference_size, reference_size), Image.Resampling.LANCZOS)
+        canvas = Image.new("RGB", (image_size, image_size), (255, 255, 255))
+        x = (image_size - fitted.width) // 2
+        y = (image_size - fitted.height) // 2
+        if fitted.mode == "RGBA":
+            canvas.paste(fitted, (x, y), fitted)
+        else:
+            canvas.paste(fitted.convert("RGB"), (x, y))
+        return canvas
 
 
 def _load_pipeline():
@@ -187,11 +294,11 @@ def generate_dog_harness_image(dog_image_path: Path, harness_image_path: Path, p
     image_size = image_size - (image_size % 8)
     user_prompt = (prompt or config.sd_prompt).strip() or "a dog is wearing the harness"
     generation_prompt = (
-        "same dog as the input photo, same breed, same face, same ears, same eyes, same black tan and white fur, "
+        "same dog as the input photo, same breed, same face, same ears, same eyes, same fur color and fur pattern, "
         "same body shape and same standing pose, preserve the original background, "
-        "only edit the neck, chest, shoulders and torso so the dog is wearing the harness, "
-        f"{user_prompt}, the harness should match the product reference image: olive green fabric body, black straps, "
-        "black buckles, black handle, chest harness, realistic fit, natural fur occlusion, realistic shadows"
+        "only edit the narrow harness contact areas around the neck, shoulders, upper chest, and side straps, "
+        f"{user_prompt}, the harness must match the uploaded product reference image exactly, including its color, "
+        "fabric, straps, buckles, handle, outline, and overall design, realistic fit, natural fur occlusion, realistic shadows"
     )
 
     with Image.open(dog_image_path) as dog_source:
@@ -202,8 +309,12 @@ def generate_dog_harness_image(dog_image_path: Path, harness_image_path: Path, p
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
     base_path = RESULT_DIR / f"inpaint_base_{uuid4().hex}.png"
     mask_path = RESULT_DIR / f"inpaint_mask_{uuid4().hex}.png"
+    overlay_path = RESULT_DIR / f"inpaint_mask_overlay_{uuid4().hex}.png"
+    product_reference_path = RESULT_DIR / f"product_reference_{uuid4().hex}.png"
     base_image.save(base_path, format="PNG")
     mask_image.save(mask_path, format="PNG")
+    _make_mask_overlay(base_image, mask_image).save(overlay_path, format="PNG")
+    product_reference.save(product_reference_path, format="PNG")
 
     pipeline = _load_pipeline()
 
@@ -237,6 +348,8 @@ def generate_dog_harness_image(dog_image_path: Path, harness_image_path: Path, p
         result_image_path=result_path,
         base_image_path=base_path,
         mask_image_path=mask_path,
+        mask_overlay_path=overlay_path,
+        product_reference_path=product_reference_path,
         prompt=generation_prompt,
         negative_prompt=config.sd_negative_prompt,
     )
